@@ -1,0 +1,344 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-07-31T18:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v9.0.0",
+  "resources": [
+    {
+      "_id": "wrk_orders_api",
+      "_type": "workspace",
+      "parentId": null,
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "orders-api",
+      "description": "Local collection for the orders-api learning project. See docs/tickets.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_orders_base",
+      "_type": "environment",
+      "parentId": "wrk_orders_api",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Local",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "customer_id": "cust-01",
+        "order_id": "paste-an-order-id-here"
+      },
+      "dataPropertyOrder": {
+        "&": ["base_url", "customer_id", "order_id"]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1785456000000
+    },
+    {
+      "_id": "jar_orders",
+      "_type": "cookie_jar",
+      "parentId": "wrk_orders_api",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Default Jar",
+      "cookies": []
+    },
+    {
+      "_id": "fld_orders",
+      "_type": "request_group",
+      "parentId": "wrk_orders_api",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Orders",
+      "description": "POST /order, GET /orders and GET /order?customerId= are live. Get-by-id and cancel still arrive with ORD-002.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1785456000000
+    },
+    {
+      "_id": "fld_ops",
+      "_type": "request_group",
+      "parentId": "wrk_orders_api",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Ops",
+      "description": "Actuator endpoints — useful for confirming Postgres is actually connected.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1785455000000
+    },
+    {
+      "_id": "req_place_order",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Place order — valid",
+      "description": "Happy path. Expect 202 Accepted with the priced OrderResponse.\nSKUs come from PriceCatalog: SKU-1 Bookcase 320.99, SKU-2 Shelf 11.99, SKU-3 Wardrobe 33.99.\n\nCheck three things in the response:\n  * total is 356.96 — 320.99 + (11.99 x 3). If it is 0, nothing is recalculating the total from the lines.\n  * items has two entries, each with quantity, unitPrice and lineTotal. The quantity must be what you sent (1 and 3), not the catalogue's own quantity field.\n  * orderId is a real persisted id — copy it into the order_id environment variable.\n\nNote: the customerId you send is currently ignored. OrderService hardcodes 'cust-01', which is why the customer_id variable is set to that. Once the id comes from the request (or from a JWT via Spring Security), the variable becomes whatever you send.",
+      "url": "{{ _.base_url }}/api/orders-service/order",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"customerId\": \"{{ _.customer_id }}\",\n  \"currency\": \"GBP\",\n  \"items\": [\n    { \"sku\": \"SKU-1\", \"quantity\": 1 },\n    { \"sku\": \"SKU-2\", \"quantity\": 3 }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1785456000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_place_order_invalid",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Place order — fails validation",
+      "description": "Blank customerId, lowercase currency (fails the ^[A-Z]{3}$ pattern), quantity 0 (fails @Min(1)) and an empty-ish items list.\nExpect 400. Until ORD-003 the body is Spring's default error shape.",
+      "url": "{{ _.base_url }}/api/orders-service/order",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"customerId\": \"\",\n  \"currency\": \"gbp\",\n  \"items\": [\n    { \"sku\": \"SKU-1\", \"quantity\": 0 }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1785455000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_place_order_unknown_sku",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Place order — unknown SKU",
+      "description": "Passes validation, then UnknownSkuException is thrown in the service.\nExpect 500 today — turning this into a clean 4xx is the point of ORD-003.",
+      "url": "{{ _.base_url }}/api/orders-service/order",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"customerId\": \"{{ _.customer_id }}\",\n  \"currency\": \"GBP\",\n  \"items\": [\n    { \"sku\": \"SKU-DOES-NOT-EXIST\", \"quantity\": 1 }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1785454000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_get_order_by_id",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Get order by id  [ORD-002 — not built yet]",
+      "description": "404s until you add the endpoint. Set the order_id environment variable to an id returned by 'Place order — valid'.",
+      "url": "{{ _.base_url }}/api/orders-service/order/{{ _.order_id }}",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1785453000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_list_orders",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "List all orders — paged",
+      "description": "GET /orders, backed by findAll(Pageable) and mapped to OrderListResponse.\n\nDeliberately has no line items — the javadoc on OrderListResponse explains why: one query per page, and nothing lazy is touched during serialisation.\n\nThe page/size/sort params override @PageableDefault(size = 20, sort = 'createdAt', DESC). Sort accepts any OrderEntity property, so 'total,desc' and 'placedAt,asc' both work. Ask for a property that does not exist and you get a 500 from PropertyReferenceException.",
+      "url": "{{ _.base_url }}/api/orders-service/orders",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "page",
+          "value": "0",
+          "disabled": false
+        },
+        {
+          "name": "size",
+          "value": "20",
+          "disabled": false
+        },
+        {
+          "name": "sort",
+          "value": "createdAt,desc",
+          "disabled": true
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1785452500000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_get_orders_by_customer",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Get orders by customer — paged, with line items",
+      "description": "GET /order?customerId=, backed by the derived query findByCustomerId(String, Pageable) and mapped to OrderResponse — so unlike the list endpoint, each order carries its items.\n\nRequires @RequestParam String customerId on the controller. @PathVariable will fail with MissingPathVariableException, since the path has no {customerId} in it.\n\nPlace two or three orders first, then run this. Things worth checking:\n  * every order in the page has a populated items array — an empty one means the cascade is not persisting lines\n  * no LazyInitializationException — the entity to DTO mapping happens inside @Transactional(readOnly = true), which is what makes touching order.getLines() safe\n  * watch the SQL log with spring.jpa.show-sql=true: @BatchSize(50) should fetch the lines for the whole page in one 'where order_id in (...)' rather than one query per order",
+      "url": "{{ _.base_url }}/api/orders-service/order",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "customerId",
+          "value": "{{ _.customer_id }}",
+          "disabled": false
+        },
+        {
+          "name": "page",
+          "value": "0",
+          "disabled": false
+        },
+        {
+          "name": "size",
+          "value": "20",
+          "disabled": false
+        },
+        {
+          "name": "sort",
+          "value": "placedAt,desc",
+          "disabled": true
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1785452000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_get_orders_by_unknown_customer",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Get orders by customer — no matches",
+      "description": "A customer with nothing stored. Expect 200 with an empty content array and totalElements 0 — not a 404.\n\nA collection endpoint that finds nothing has still succeeded; the collection is simply empty. 404 is for a resource that does not exist, which is the get-by-id case.",
+      "url": "{{ _.base_url }}/api/orders-service/order",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "customerId",
+          "value": "nobody-here",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1785451500000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_cancel_order",
+      "_type": "request",
+      "parentId": "fld_orders",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Cancel order  [ORD-002 — not built yet]",
+      "description": "Should succeed for PENDING and be rejected once OrderStatus.isTerminal() is true.",
+      "url": "{{ _.base_url }}/api/orders-service/order/{{ _.order_id }}/cancel",
+      "method": "POST",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1785451000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_health",
+      "_type": "request",
+      "parentId": "fld_ops",
+      "modified": 1785456000000,
+      "created": 1785456000000,
+      "name": "Health",
+      "description": "Add management.endpoint.health.show-details=always to application.properties to see the 'db' component — the quickest confirmation that Hibernate reached Postgres.",
+      "url": "{{ _.base_url }}/actuator/health",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1785456000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    }
+  ]
+}

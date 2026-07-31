@@ -1,0 +1,55 @@
+name: orders
+
+services:
+
+  postgres:
+    image: postgres:17
+    container_name: orders-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders
+    ports:
+      # host:container — exposed so you can also reach it from ./gradlew bootRun
+      # running outside Docker, or from a GUI client like DBeaver / psql.
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # "is the DB actually accepting connections", not just "is the container up"
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    # Behind a profile, so a plain `docker compose up` starts only Postgres and
+    # you keep running the app from your IDE. Add --profile app to include it.
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orders-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        # waits for the healthcheck above, not merely for the container to exist
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    # --- ORD-002: wire the datasource up yourself ---
+    # Spring maps SPRING_DATASOURCE_URL -> spring.datasource.url, etc.
+    # Note the host is `postgres` (the service name), NOT localhost — inside the
+    # compose network each service is reachable by its own name.
+    #
+    # environment:
+    #   SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orders
+    #   SPRING_DATASOURCE_USERNAME: orders
+    #   SPRING_DATASOURCE_PASSWORD: orders
+    #   SPRING_JPA_HIBERNATE_DDL_AUTO: update
+
+  # ORD-007 adds a Kafka broker here.
+
+volumes:
+  postgres-data:

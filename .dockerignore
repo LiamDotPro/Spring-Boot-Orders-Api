@@ -1,0 +1,11 @@
+# Keep the build context small and stop host artifacts leaking into the image.
+# Note: .gradle/ (local cache) is ignored, gradle/ (the wrapper) is NOT.
+.gradle/
+build/
+.git/
+.idea/
+.vscode/
+docs/
+*.iml
+*.log
+HELP.md
