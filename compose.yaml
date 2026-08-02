@@ -103,6 +103,44 @@ services:
     # No volume on purpose: the log dir has to be formatted with the cluster id, and
     # throwing the messages away on `docker compose down -v` is what you want locally.
 
+  web:
+    # Dev console: place orders and watch the async status changes land.
+    # `docker compose --profile web up -d --build` → http://localhost:3000
+    profiles: ["web"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: orders-web
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      # Where nginx forwards /api. Two workflows, two values:
+      #
+      #   host.docker.internal:8080  → the app is running on your machine (IDE /
+      #                                ./gradlew bootRun). This is the default,
+      #                                matching the `api` service being behind a profile.
+      #   api:8080                   → the app is running in this compose file
+      #                                (`--profile app --profile web`).
+      #
+      # Override without editing this file:
+      #   API_UPSTREAM=api:8080 docker compose --profile app --profile web up -d
+      API_UPSTREAM: ${API_UPSTREAM:-host.docker.internal:8080}
+      # Restrict envsubst to our own variable so nginx's $host / $request_uri survive.
+      NGINX_ENVSUBST_FILTER: "API_UPSTREAM"
+    extra_hosts:
+      # Linux does not provide host.docker.internal by default; Docker Desktop does.
+      # Declaring it is harmless on Desktop and makes the default work everywhere.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Deliberately no depends_on: the console is useful (and shows "api unreachable")
+    # before the API exists, and it must not drag the profiled `api` service into
+    # every `--profile web` run.
+
   kafka-ui:
     # Optional (ticket step 4). `docker compose --profile ui up -d` to include it.
     profiles: ["ui"]

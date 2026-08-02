@@ -49,10 +49,11 @@ Flashcards for the concepts live outside this repo in `C:\Users\liam\flashcards`
 | [ORD-010](tickets/ORD-010-kafka-error-handling.md) | Retries and a dead-letter topic | `DefaultErrorHandler`, backoff, poison messages |
 | [ORD-011](tickets/ORD-011-kafka-testing.md) | Test the producer and consumer | `@EmbeddedKafka`, Testcontainers, async assertions |
 | [ORD-012](tickets/ORD-012-outbox-and-idempotency.md) | Outbox pattern and idempotent consumers | Dual-write problem, at-least-once delivery (stretch) |
+| [ORD-014](tickets/ORD-014-payments-context.md) | A payments context that owns its own data | Bounded contexts, event choreography, consumer-owned data |
 
 ## Suggested order
 
-ORD-001 → ORD-003 → ORD-002 → ORD-013 → ORD-005 → ORD-007 → ORD-008 → ORD-009 → ORD-010 → ORD-011 → ORD-004 → ORD-006 → ORD-012
+ORD-001 → ORD-003 → ORD-002 → ORD-013 → ORD-005 → ORD-007 → ORD-008 → ORD-009 → ORD-014 → ORD-010 → ORD-011 → ORD-004 → ORD-006 → ORD-012
 
 Validation and error handling first because they are quick and change how every later endpoint looks.
 Persistence before Kafka because `OrderPlaced` events are much more interesting when there is a real

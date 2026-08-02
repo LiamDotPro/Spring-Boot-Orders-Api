@@ -3,6 +3,7 @@ package com.liamread.orders.common;
 import com.liamread.orders.order.exception.InvalidStatusTransitionException;
 import com.liamread.orders.order.exception.OrderAccessDeniedException;
 import com.liamread.orders.order.exception.OrderNotFoundException;
+import com.liamread.orders.payment.exception.PaymentNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -50,6 +51,21 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create("https://api.liamread.com/errors/invalid-status-transition"));
         problem.setProperty("currentStatus", ex.getFrom());
         problem.setProperty("requestedStatus", ex.getTo());
+        return problem;
+    }
+
+    /**
+     * 404 — no payment has been attempted for this order.
+     *
+     * <p>Worth noticing that this is a routine, temporary answer rather than a fault: between an
+     * order being placed and its {@code OrderPlaced} event being consumed, this is the correct
+     * response. A client polling for a payment should treat 404 as "not yet", not as "never".
+     */
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ProblemDetail handlePaymentNotFound(PaymentNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setTitle("Payment not found");
+        problem.setType(URI.create("https://api.liamread.com/errors/payment-not-found"));
         return problem;
     }
 

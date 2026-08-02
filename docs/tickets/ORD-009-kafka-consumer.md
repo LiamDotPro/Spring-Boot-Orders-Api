@@ -19,6 +19,12 @@ interesting behaviour lives.
    Give it something to do that is observably real — move the order from `PENDING` to `PROCESSING`
    via the repository from ORD-002, and log the partition and offset it came from.
 
+   > **This side effect is deliberately artificial and ORD-014 replaces it.** A service publishing an
+   > event so it can consume its own event and mutate its own aggregate is a loop-back — it buys
+   > nothing and costs you a race. It is here because the consumer-group lessons below need a side
+   > effect you can observe over HTTP. Guard the transition on the order being `PENDING` so it does
+   > not fight ORD-013's lifecycle, and do not take it as a design recommendation.
+
 2. Configure the consumer in `application.yml`:
    - `key-deserializer`: `StringDeserializer`
    - `value-deserializer`: `JsonDeserializer`, wrapped in `ErrorHandlingDeserializer`

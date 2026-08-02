@@ -59,6 +59,53 @@ public class OrderService {
         return OrderResponse.from(saved);
     }
 
+    /**
+     * Record that the payments context accepted the charge.
+     *
+     * <p>Called by the listener that consumes {@code payments.payment-succeeded.v1}. Everything
+     * about Kafka stays in that listener — this method is a plain state transition that a test can
+     * call directly.
+     *
+     * <p>Silently does nothing unless the order is still {@code PENDING}. That guard is doing two
+     * jobs: it makes a redelivered event harmless, and it stops a payment outcome that arrives
+     * after a cancellation from resurrecting the order. Both are normal, not exceptional, so
+     * neither throws.
+     *
+     * <p>No {@code save()} — the entity is managed inside this transaction, so Hibernate's dirty
+     * checking writes the change at commit.
+     */
+    @Transactional
+    public void markPaid(UUID orderId) {
+        OrderEntity order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            log.info("Ignoring payment success for order {} — already {}", orderId, order.getStatus());
+            return;
+        }
+
+        order.setStatus(OrderStatus.PAID);
+        log.info("Order {} marked PAID", orderId);
+    }
+
+    /**
+     * Record that the payments context declined the charge. See {@link #markPaid(UUID)} — the same
+     * guard, and the same reasons for it.
+     */
+    @Transactional
+    public void markPaymentFailed(UUID orderId, String reason) {
+        OrderEntity order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            log.info("Ignoring payment failure for order {} — already {}", orderId, order.getStatus());
+            return;
+        }
+
+        order.setStatus(OrderStatus.FAILED);
+        log.info("Order {} marked FAILED — {}", orderId, reason);
+    }
+
     @Transactional(readOnly = true)
     public Page<OrderListResponse> getOrders(Pageable pageable) {
         return orderRepository.findAll(pageable).map(OrderListResponse::from);

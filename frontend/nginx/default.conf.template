@@ -1,0 +1,50 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Docker's embedded DNS. Needed because the proxy_pass below uses a variable,
+    # which defers name resolution to request time instead of startup — so this
+    # container starts happily whether or not the API is up yet, and picks up a
+    # new container IP if the API restarts.
+    resolver 127.0.0.11 ipv6=off valid=10s;
+
+    # Dev console: never cache, or you will spend an afternoon debugging a page
+    # that was fixed twenty minutes ago.
+    location / {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+
+    # Same-origin proxy to the Spring app. The browser only ever talks to
+    # localhost:3000, so there is no cross-origin request and no CORS config
+    # needed on the Java side.
+    location /api/ {
+        set $api_upstream "${API_UPSTREAM}";
+        proxy_pass http://$api_upstream$request_uri;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Fail fast when the API is not running — the console shows "unreachable"
+        # rather than hanging the poll for a minute.
+        proxy_connect_timeout 3s;
+        proxy_send_timeout    30s;
+        proxy_read_timeout    30s;
+
+        # Don't turn an API 502/503 into an nginx error page; the console parses
+        # the body and shows the real ProblemDetail.
+        proxy_intercept_errors off;
+    }
+
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+}

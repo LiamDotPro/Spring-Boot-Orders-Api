@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>orders-api — dev console</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📦</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">📦</span>
+    <div>
+      <h1>orders-api</h1>
+      <p class="brand-sub">local dev console</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="api-status" class="pill pill-unknown">connecting…</span>
+    <label class="poll-toggle">
+      <input type="checkbox" id="poll-enabled" checked>
+      <span>live poll</span>
+    </label>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ─────────────── place an order ─────────────── -->
+  <section class="card" id="place-card">
+    <h2>Place an order</h2>
+
+    <div class="field-row">
+      <label class="field">
+        <span>Customer id</span>
+        <input type="text" id="customer-id" value="cus-1" autocomplete="off">
+      </label>
+      <label class="field field-narrow">
+        <span>Currency</span>
+        <select id="currency">
+          <option value="GBP">GBP</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+        </select>
+      </label>
+    </div>
+
+    <h3 class="section-label">Catalogue <span id="catalogue-source" class="muted-tag"></span></h3>
+    <div id="catalogue" class="catalogue">
+      <p class="muted">Loading catalogue…</p>
+    </div>
+
+    <div class="totals">
+      <div class="totals-line">
+        <span>Order total</span>
+        <strong id="order-total">—</strong>
+      </div>
+      <div id="decline-hint" class="decline-hint hidden"></div>
+    </div>
+
+    <details class="sim">
+      <summary>Payment simulation</summary>
+      <p class="muted small">
+        ORD-014 declines a payment above a configured ceiling
+        (<code>payments.auto-decline-above</code>). Set the same number here and the console will
+        tell you which outcome to expect before you place the order.
+      </p>
+      <label class="field field-narrow">
+        <span>Decline above</span>
+        <input type="number" id="decline-above" value="500.00" min="0" step="0.01">
+      </label>
+      <p class="muted small">
+        Until the payments context exists, orders simply stay in the status the ORD-009 listener
+        leaves them in.
+      </p>
+    </details>
+
+    <button id="place-btn" class="primary" type="button">Place order</button>
+    <div id="place-feedback" class="feedback"></div>
+  </section>
+
+  <!-- ─────────────── live orders ─────────────── -->
+  <section class="card" id="orders-card">
+    <div class="card-head">
+      <h2>Orders</h2>
+      <span id="orders-meta" class="muted small"></span>
+    </div>
+    <div class="table-scroll">
+      <table class="orders-table">
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Customer</th>
+            <th class="num">Total</th>
+            <th>Status</th>
+            <th class="num">Age</th>
+          </tr>
+        </thead>
+        <tbody id="orders-body">
+          <tr><td colspan="5" class="muted center">No orders yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─────────────── selected order ─────────────── -->
+  <section class="card" id="detail-card">
+    <div class="card-head">
+      <h2>Selected order</h2>
+      <button id="cancel-btn" class="danger small-btn hidden" type="button">Cancel order</button>
+    </div>
+    <div id="detail-body">
+      <p class="muted">Pick an order from the table to see its lines and payment attempt.</p>
+    </div>
+  </section>
+
+  <!-- ─────────────── observed events ─────────────── -->
+  <section class="card" id="log-card">
+    <div class="card-head">
+      <h2>Observed transitions</h2>
+      <button id="clear-log" class="ghost small-btn" type="button">Clear</button>
+    </div>
+    <p class="muted small">
+      What this browser saw change, and how long after the order was accepted. This is the
+      eventual consistency window, measured.
+    </p>
+    <ol id="event-log" class="event-log">
+      <li class="muted">Nothing observed yet.</li>
+    </ol>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

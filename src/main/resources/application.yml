@@ -20,3 +20,15 @@ spring:
     hibernate:
       ddl-auto: update
     open-in-view: false
+
+# Simulated payment provider. Every rule is deterministic on purpose — a random
+# decline cannot be tested and cannot be demonstrated.
+payments:
+  # Orders strictly above this are declined. Comment out to approve everything.
+  auto-decline-above: 500.00
+  # A customer id ending with this is always declined, whatever the amount.
+  decline-customer-suffix: "-DECLINE"
+  # Artificial provider delay, so the async gap is visible in the dev console.
+  # Keep it well under max.poll.interval.ms once a Kafka listener calls this, or
+  # the consumer gets evicted mid-payment and you have built a rebalance loop.
+  provider-latency-millis: 0
