@@ -36,6 +36,8 @@ services:
       postgres:
         # waits for the healthcheck above, not merely for the container to exist
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     ports:
       - "8080:8080"
     # --- ORD-002: wire the datasource up yourself ---
@@ -48,8 +50,75 @@ services:
     #   SPRING_DATASOURCE_USERNAME: orders
     #   SPRING_DATASOURCE_PASSWORD: orders
     #   SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    #   # ORD-007: same rule — from inside the network it's the DOCKER listener,
+    #   # so kafka:29092, not the localhost:9092 you'd use from bootRun.
+    #   SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
-  # ORD-007 adds a Kafka broker here.
+  kafka:
+    # Official Apache image. Kafka 4.x is KRaft-only — no Zookeeper container to run.
+    image: apache/kafka:4.0.0
+    container_name: orders-kafka
+    restart: unless-stopped
+    ports:
+      # Only the host-facing listener is published. 9093 (controller) and 29092
+      # (inter-container) are deliberately not exposed — nothing outside the
+      # compose network has any business talking to them.
+      - "9092:9092"
+    environment:
+      # --- KRaft: this one node is both the broker and the controller quorum ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Fixed so the formatted log dir stays valid across restarts.
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+
+      # --- Listeners: the trap the ticket warns about ---
+      # Three sockets, three audiences:
+      #   HOST       -> your app / CLI running on Windows, via localhost:9092
+      #   DOCKER     -> other containers on this network, via kafka:29092
+      #   CONTROLLER -> KRaft internal traffic
+      # LISTENERS is what the broker binds. ADVERTISED_LISTENERS is what it *tells
+      # clients to reconnect on* after the first handshake — get that wrong and the
+      # client connects fine, then hangs talking to an unreachable address.
+      KAFKA_LISTENERS: HOST://0.0.0.0:9092,DOCKER://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+
+      # --- Single-broker sanity. Defaults assume a 3-node cluster and the internal
+      # topics would never get enough replicas to come online. ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # No point waiting for stragglers to join a group locally.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      # Same idea as pg_isready: can a client actually do a round trip?
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    # No volume on purpose: the log dir has to be formatted with the cluster id, and
+    # throwing the messages away on `docker compose down -v` is what you want locally.
+
+  kafka-ui:
+    # Optional (ticket step 4). `docker compose --profile ui up -d` to include it.
+    profiles: ["ui"]
+    image: kafbat/kafka-ui:latest
+    container_name: orders-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      # Container-to-container, so the DOCKER listener — not localhost:9092.
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
 
 volumes:
   postgres-data:

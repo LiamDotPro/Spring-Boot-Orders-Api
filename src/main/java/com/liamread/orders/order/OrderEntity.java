@@ -3,6 +3,7 @@ package com.liamread.orders.order;
 import com.liamread.orders.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
+import lombok.Setter;
 import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
@@ -14,6 +15,7 @@ import java.util.List;
 @Entity
 @Table(name = "orders")
 @Getter
+@Setter
 public class OrderEntity extends BaseEntity {
 
     private String customerId;
