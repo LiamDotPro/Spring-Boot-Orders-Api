@@ -1,76 +1,104 @@
 # Dev console
 
-A one-page browser client for `orders-api`. Place an order, watch a Kafka consumer change its
-status a moment later, and see how long that took.
+A React browser client for `orders-api`. Place an order, drive it through its lifecycle, and watch
+Kafka consumers change its status a moment later.
 
-Plain HTML/CSS/JS served by nginx — no npm, no build step, no external requests. nginx also
-proxies `/api` to the Spring app, which means the browser only ever talks to one origin and the
-Java side needs **no CORS configuration**.
+React 19 + TypeScript + TanStack Query + React Router, built by Vite and served by nginx. nginx also
+proxies `/api` to the Spring app, so the browser only ever talks to one origin and the Java side
+needs **no CORS configuration**.
 
 ## Run it
 
-The app is expected to be running on your machine (IDE or `./gradlew bootRun`), which is the
-default this compose setup assumes:
+### Against the app on your machine (IDE / `./gradlew bootRun`)
 
 ```bash
-docker compose --profile web up -d --build
-# http://localhost:3000
+cd frontend
+npm install
+npm run dev          # http://localhost:3000, hot reload, proxies /api to localhost:8080
 ```
 
-If you are running the API in Docker too, point the proxy at the container instead:
+Point the dev proxy somewhere else with `VITE_API_TARGET=http://localhost:9090 npm run dev`.
+
+### In Docker
+
+```bash
+docker compose --profile web up -d --build       # http://localhost:3000
+```
+
+That default assumes the API is on your host. If it is running in compose too:
 
 ```bash
 API_UPSTREAM=api:8080 docker compose --profile app --profile web up -d --build
 ```
 
-On Windows/macOS, PowerShell/CMD do not support the inline `VAR=x cmd` form — use
-`$env:API_UPSTREAM = "api:8080"` first, or put `API_UPSTREAM=api:8080` in a `.env` file next to
-`compose.yaml`.
+PowerShell has no inline `VAR=x cmd` form — use `$env:API_UPSTREAM = "api:8080"` first, or put
+`API_UPSTREAM=api:8080` in a `.env` next to `compose.yaml`.
 
-## What it does
+## The two pages
 
-| Panel | What it is for |
+| Route | What it is |
 |---|---|
-| **Place an order** | Customer, currency, quantities from the catalogue. Shows the running total and predicts the payment outcome against the ORD-014 decline ceiling. |
-| **Orders** | Polls `GET /api/orders-service/orders` every 1.5s. Rows flash when a status changes. |
-| **Selected order** | Line items, plus the payment attempt from `GET /api/payments/{orderId}`. When no attempt exists, a **Simulate payment** button calls `POST /api/payments/{orderId}/attempt` directly — useful until a Kafka listener drives payments, after which an attempt will already be there. Cancel button. |
-| **Observed transitions** | Every status change this browser saw, with the elapsed time since the order was accepted. |
+| `/` | **Place order.** Customer, currency, quantities. Shows the running total and predicts the payment outcome against the decline ceiling. |
+| `/orders`, `/orders/:orderId` | **Orders panel.** Live table, selected order with lines and payment, stock levels, and the transition log. |
 
-That last panel is the reason the page exists. `POST /order` returns `202` with `PENDING`; some
-milliseconds later a consumer moves it. The number next to each transition is your eventual
-consistency window, measured rather than imagined.
+The selected order lives in the URL, so a specific order is linkable and survives a reload.
+
+### Ordering more than is in stock is allowed
+
+Deliberately. Placing an order prices it and reserves nothing — stock only moves at **Accept**. The
+catalogue shows availability and warns when you exceed it, but never blocks you, because the API
+does not. The 409 arrives at accept time, which is where the check actually lives.
+
+## How the data layer is wired
+
+- **One polling query.** `useOrders()` runs in `OrderWatchProvider`, above the router. Both pages
+  call the same hook and read the same cache entry, so there is exactly one request in flight and
+  observation continues while you are on the place-order page.
+- **Transitions are diffed in a ref**, not state — observing must not itself cause a render, and it
+  has to survive StrictMode's double-invoked effects in dev.
+- **404 from `/api/payments/{id}` resolves to `null`, not an error.** Between an order being placed
+  and its event being consumed, "no payment yet" is the correct answer, not a fault.
+- **Mutations invalidate orders, that order, its payment and stock.** Accepting changes all four.
 
 ## What it assumes
 
 - `POST /api/orders-service/order`, `GET .../orders`, `GET .../order/{id}`,
-  `POST .../order/cancel` — all present today.
-- `GET /api/stock` (ORD-013) — used for the catalogue if it exists, otherwise the page falls back
-  to a hardcoded copy of `PriceCatalog.java`. **If you change the SKUs or prices there before
-  ORD-013 lands, update `FALLBACK_CATALOGUE` in `html/app.js` too.**
-- `GET /api/payments/{orderId}` (ORD-014) — a 404 is treated as "not built yet, or the event has
-  not been consumed", which is correct in both cases.
+  `POST .../order/{id}/accept`, `POST .../order/{id}/finalize`, `POST .../order/cancel`
+- `GET /api/stock` (ORD-013)
+- `GET /api/payments/{orderId}` and `POST /api/payments/{orderId}/attempt` (ORD-014)
+
+`src/api/types.ts` mirrors the Java records by hand. When a DTO changes on that side, change it
+there — nothing generates or checks it for you.
+
+## Known advisory
+
+`react-router-dom` 7.18.2 carries one open high advisory (GHSA-qwww-vcr4-c8h2, CSRF bypass in **RSC
+mode**). There is no fixed release on the 7.x line and no 8.x published. It does not apply here —
+this app uses `BrowserRouter` with plain `<Routes>`, no RSC, no server actions, no data-router
+actions — and the console is a localhost dev tool. Earlier 7.x releases are strictly worse: 7.11
+carries fourteen advisories that 7.18 already fixes. Re-check when a fix ships.
 
 ## Files
 
 ```
 frontend/
-  Dockerfile                     nginx + static files, no build stage
-  nginx/default.conf.template    envsubst'd at container start; API_UPSTREAM is the only variable
-  html/index.html                structure
-  html/styles.css                light/dark via prefers-color-scheme
-  html/app.js                    all behaviour; no dependencies
+  Dockerfile                   node build stage → nginx runtime
+  nginx/default.conf.template  envsubst'd at start; SPA fallback + /api proxy
+  vite.config.ts               dev server + /api proxy
+  src/api/                     types, fetch client, query & mutation hooks
+  src/state/                   settings, transition log, order watcher (all above the router)
+  src/components/              layout, table, detail, payment, log
+  src/pages/                   PlaceOrderPage, OrdersPage
 ```
 
 ## Troubleshooting
 
-**"api unreachable" in the top right.** The proxy cannot reach the upstream. Check the app is
-actually listening on 8080, then `docker compose logs web`.
+**"api unreachable".** The proxy cannot reach the upstream. Check the app is listening on 8080,
+then `docker compose logs web`. Note the console reports whatever answers on that port — it cannot
+tell your process from a stray one. `netstat -ano | findstr :8080` gives you the PID.
 
-**502 with `host.docker.internal could not be resolved`.** The nginx config resolves the upstream
-at request time via Docker's embedded DNS (127.0.0.11) so the container starts whether or not the
-API is up. If your Docker version does not serve `host.docker.internal` from that resolver, set
-`API_UPSTREAM` to the gateway IP directly, or run the API in compose with `API_UPSTREAM=api:8080`.
+**404 on reloading `/orders`.** The SPA fallback is missing — that is `try_files $uri $uri/
+/index.html` in the nginx template. `npm run dev` handles it automatically.
 
-**Changes to the HTML/JS not showing.** The files are baked into the image — rebuild with
-`docker compose --profile web up -d --build`. For a faster edit loop, bind-mount instead:
-`volumes: ["./frontend/html:/usr/share/nginx/html:ro"]`.
+**Changes not showing in Docker.** Assets are baked into the image; rebuild with
+`docker compose --profile web up -d --build`. Use `npm run dev` for a fast loop instead.

@@ -1,0 +1,27 @@
+# Dependencies — restored by `npm ci` from package-lock.json, never committed.
+node_modules/
+
+# Build output. Produced by `npm run build`; the Docker build makes its own copy.
+dist/
+
+# TypeScript incremental build state (tsc -b).
+*.tsbuildinfo
+
+# Vite caches
+.vite/
+vite.config.ts.timestamp-*
+
+# Local env overrides — these are the ones that end up holding secrets.
+# .env is committed if you ever add one with non-secret defaults.
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
