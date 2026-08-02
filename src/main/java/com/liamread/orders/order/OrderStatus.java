@@ -12,6 +12,7 @@ public enum OrderStatus {
 
     PENDING("Order received, awaiting payment"),
     PAID("Payment confirmed"),
+    ALLOCATED("Stock reserved, awaiting dispatch"),
     PROCESSING("Being prepared for dispatch"),
     SHIPPED("Handed to the carrier"),
     DELIVERED("Received by the customer"),

@@ -4,6 +4,8 @@ import com.liamread.orders.order.exception.InvalidStatusTransitionException;
 import com.liamread.orders.order.exception.OrderAccessDeniedException;
 import com.liamread.orders.order.exception.OrderNotFoundException;
 import com.liamread.orders.payment.exception.PaymentNotFoundException;
+import com.liamread.orders.stock.exception.InsufficientStockException;
+import com.liamread.orders.stock.exception.UnknownSkuException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -66,6 +68,35 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problem.setTitle("Payment not found");
         problem.setType(URI.create("https://api.liamread.com/errors/payment-not-found"));
+        return problem;
+    }
+
+    /**
+     * 404 — the SKU is not in the catalogue at all. A 400 would be defensible, but the request is
+     * well-formed and names a resource; it is the resource that does not exist.
+     */
+    @ExceptionHandler(UnknownSkuException.class)
+    public ProblemDetail handleUnknownSku(UnknownSkuException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setTitle("Unknown SKU");
+        problem.setType(URI.create("https://api.liamread.com/errors/unknown-sku"));
+        problem.setProperty("sku", ex.getSku());
+        return problem;
+    }
+
+    /**
+     * 409, not 400 — nothing was wrong with the request, and the identical request would succeed
+     * once a restock lands. The numbers go out as extension members so a client can show "only 2
+     * left" without parsing the sentence.
+     */
+    @ExceptionHandler(InsufficientStockException.class)
+    public ProblemDetail handleInsufficientStock(InsufficientStockException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Insufficient stock");
+        problem.setType(URI.create("https://api.liamread.com/errors/insufficient-stock"));
+        problem.setProperty("sku", ex.getSku());
+        problem.setProperty("requested", ex.getRequested());
+        problem.setProperty("available", ex.getAvailable());
         return problem;
     }
 

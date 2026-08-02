@@ -109,7 +109,11 @@
   <section class="card" id="detail-card">
     <div class="card-head">
       <h2>Selected order</h2>
-      <button id="cancel-btn" class="danger small-btn hidden" type="button">Cancel order</button>
+      <div class="detail-actions">
+        <button id="accept-btn" class="ok-btn small-btn hidden" type="button">Accept</button>
+        <button id="finalize-btn" class="ok-btn small-btn hidden" type="button">Finalize</button>
+        <button id="cancel-btn" class="danger small-btn hidden" type="button">Cancel order</button>
+      </div>
     </div>
     <div id="detail-body">
       <p class="muted">Pick an order from the table to see its lines and payment attempt.</p>

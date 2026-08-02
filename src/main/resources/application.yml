@@ -16,10 +16,19 @@ spring:
       properties:
         enable.idempotence: true
 
+  # data.sql seeds the stock table. `mode: always` because the default only runs scripts
+  # against embedded databases and Postgres is not one.
+  sql:
+    init:
+      mode: always
+
   jpa:
     hibernate:
       ddl-auto: update
     open-in-view: false
+    # Without this, data.sql runs before Hibernate has created the tables and every
+    # INSERT fails on a table that does not exist yet.
+    defer-datasource-initialization: true
 
 # Simulated payment provider. Every rule is deterministic on purpose — a random
 # decline cannot be tested and cannot be demonstrated.

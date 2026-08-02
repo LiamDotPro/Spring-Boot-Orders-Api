@@ -189,7 +189,10 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .primary { background: var(--accent); color: var(--accent-text); width: 100%; margin-top: 14px; }
 .danger  { background: transparent; color: var(--danger); border-color: var(--danger); }
 .ghost   { background: transparent; color: var(--text-muted); border-color: var(--border); }
+.ok-btn  { background: transparent; color: var(--ok); border-color: var(--ok); }
 .small-btn { padding: 4px 10px; font-size: 12px; font-weight: 500; }
+
+.detail-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ── catalogue ───────────────────────────────────── */
 

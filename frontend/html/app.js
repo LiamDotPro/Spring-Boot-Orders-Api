@@ -13,6 +13,8 @@ const API = {
   order:       '/api/orders-service/order',
   orderById:   (id) => `/api/orders-service/order/${encodeURIComponent(id)}`,
   cancel:      '/api/orders-service/order/cancel',
+  accept:      (id) => `/api/orders-service/order/${encodeURIComponent(id)}/accept`,
+  finalize:    (id) => `/api/orders-service/order/${encodeURIComponent(id)}/finalize`,
   payment:     (id) => `/api/payments/${encodeURIComponent(id)}`,
   payAttempt:  (id) => `/api/payments/${encodeURIComponent(id)}/attempt`,
   stock:       '/api/stock',
@@ -392,13 +394,15 @@ function statusBadge(status) {
 
 /* ── selected order detail ────────────────────────────────────── */
 
+const TERMINAL = ['DELIVERED', 'CANCELLED', 'REFUNDED', 'FAILED'];
+
 async function renderDetail() {
   const root = $('detail-body');
-  const cancelBtn = $('cancel-btn');
+  const buttons = ['accept-btn', 'finalize-btn', 'cancel-btn'].map($);
 
   if (!state.selectedId) {
     root.innerHTML = '<p class="muted">Pick an order from the table to see its lines and payment attempt.</p>';
-    cancelBtn.classList.add('hidden');
+    buttons.forEach((b) => b.classList.add('hidden'));
     return;
   }
 
@@ -407,12 +411,16 @@ async function renderDetail() {
     order = await api(API.orderById(state.selectedId));
   } catch (err) {
     root.innerHTML = `<p class="feedback error">${esc(describeError(err))}</p>`;
-    cancelBtn.classList.add('hidden');
+    buttons.forEach((b) => b.classList.add('hidden'));
     return;
   }
 
-  const terminal = ['DELIVERED', 'CANCELLED', 'REFUNDED', 'FAILED'].includes(order.status);
-  cancelBtn.classList.toggle('hidden', terminal);
+  // Mirrors the server-side state machine. The server is the authority — these only decide
+  // which buttons are worth offering, and a stale page still gets a 409 rather than a wrong write.
+  const terminal = TERMINAL.includes(order.status);
+  $('accept-btn').classList.toggle('hidden', !['PENDING', 'PAID'].includes(order.status));
+  $('finalize-btn').classList.toggle('hidden', order.status !== 'ALLOCATED');
+  $('cancel-btn').classList.toggle('hidden', terminal || order.status === 'SHIPPED');
 
   const lines = (order.items ?? []).map((line) => `
     <tr>
@@ -513,6 +521,27 @@ async function simulatePayment(order) {
   }
 }
 
+/**
+ * Accept and finalize share a shape: POST, log the outcome, refresh everything.
+ * The catalogue reload matters — allocation is the whole reason "available" moves.
+ */
+async function lifecycleAction(buttonId, url, verb) {
+  if (!state.selectedId) return;
+
+  const button = $(buttonId);
+  button.disabled = true;
+
+  try {
+    const order = await api(url(state.selectedId), { method: 'POST' });
+    logEvent(`order ${shortId(state.selectedId)} ${verb} → ${order.status}`, 'ok');
+  } catch (err) {
+    logEvent(`${verb} ${shortId(state.selectedId)} rejected — ${describeError(err)}`, 'bad');
+  } finally {
+    button.disabled = false;
+    await Promise.all([refreshOrders(), renderDetail(), loadCatalogue()]);
+  }
+}
+
 async function cancelSelected() {
   if (!state.selectedId) return;
 
@@ -526,12 +555,12 @@ async function cancelSelected() {
       body: JSON.stringify({ orderId: state.selectedId, customerId }),
     });
     logEvent(`order ${shortId(state.selectedId)} cancelled → ${result.status ?? 'CANCELLED'}`, 'bad');
-    await refreshOrders();
-    await renderDetail();
   } catch (err) {
     logEvent(`cancel ${shortId(state.selectedId)} rejected — ${describeError(err)}`, 'bad');
   } finally {
     button.disabled = false;
+    // Cancelling an ALLOCATED order releases its stock, so availability moves here too.
+    await Promise.all([refreshOrders(), renderDetail(), loadCatalogue()]);
   }
 }
 
@@ -540,6 +569,8 @@ async function cancelSelected() {
 function init() {
   $('place-btn').addEventListener('click', placeOrder);
   $('cancel-btn').addEventListener('click', cancelSelected);
+  $('accept-btn').addEventListener('click', () => lifecycleAction('accept-btn', API.accept, 'accepted'));
+  $('finalize-btn').addEventListener('click', () => lifecycleAction('finalize-btn', API.finalize, 'finalized'));
   $('currency').addEventListener('change', renderTotal);
   $('decline-above').addEventListener('input', renderTotal);
 

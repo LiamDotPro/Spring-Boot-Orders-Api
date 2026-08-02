@@ -43,6 +43,18 @@ public class OrderController {
         return ResponseEntity.ok().body(response);
     }
 
+    /** Reserve stock for every line, or none — see {@code OrderService.acceptOrder}. */
+    @PostMapping("/order/{orderId}/accept")
+    public ResponseEntity<OrderResponse> acceptOrder(@PathVariable UUID orderId) {
+        return ResponseEntity.ok(orderService.acceptOrder(orderId));
+    }
+
+    /** Ship an allocated order: the reserved goods actually leave. */
+    @PostMapping("/order/{orderId}/finalize")
+    public ResponseEntity<OrderResponse> finalizeOrder(@PathVariable UUID orderId) {
+        return ResponseEntity.ok(orderService.finalizeOrder(orderId));
+    }
+
     @PostMapping("/order/cancel")
     public ResponseEntity<CancelledOrderResponse> cancelOrder(@Valid @RequestBody CancelOrderRequest request) {
         CancelledOrderResponse response = orderService.cancelOrder(request.orderId(), request.customerId());

@@ -9,9 +9,8 @@ import com.liamread.orders.order.event.OrderPlacedEvent;
 import com.liamread.orders.order.exception.InvalidStatusTransitionException;
 import com.liamread.orders.order.exception.OrderAccessDeniedException;
 import com.liamread.orders.order.exception.OrderNotFoundException;
-import com.liamread.orders.order.exception.UnknownSkuException;
-import com.liamread.orders.order.pricing.CatalogueItem;
-import com.liamread.orders.order.pricing.PriceCatalog;
+import com.liamread.orders.stock.PricedSku;
+import com.liamread.orders.stock.StockService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -27,29 +28,35 @@ import java.util.UUID;
 @Service
 public class OrderService {
 
-    private final PriceCatalog priceCatalog;
+    private final StockService stockService;
     private final OrderRepository orderRepository;
     private final OrderEventPublisher orderEventPublisher;
 
     public OrderService(
-            PriceCatalog priceCatalog,
+            StockService stockService,
             OrderRepository orderRepository,
             OrderEventPublisher orderEventPublisher
     ) {
-        this.priceCatalog = priceCatalog;
+        this.stockService = stockService;
         this.orderRepository = orderRepository;
         this.orderEventPublisher = orderEventPublisher;
     }
 
+    /**
+     * Placing an order prices it and nothing more — no stock moves. "We have taken your order" and
+     * "we have set your goods aside" are different promises, and {@link #acceptOrder} is where the
+     * second one is made.
+     */
     @Transactional
     public OrderResponse placeOrder(PlaceOrderRequest requestInfo) {
         // Customer id should come from Spring Security decoding a jwt << taken from request for the moment.
         OrderEntity entity = new OrderEntity(requestInfo.customerId(), requestInfo.currency());
 
         for (OrderItem line : requestInfo.items()) {
-            CatalogueItem catalogueItem = priceCatalog.lookupItem(line.sku())
-                    .orElseThrow(() -> new UnknownSkuException(line.sku()));
-            entity.addLine(catalogueItem.sku(), catalogueItem.description(), line.quantity(), catalogueItem.unitPrice());
+            // Snapshot of today's price onto the line. Never looked up again — an order line
+            // records what was agreed, and that does not change when marketing reprices.
+            PricedSku priced = stockService.lookup(line.sku());
+            entity.addLine(priced.sku(), priced.description(), line.quantity(), priced.unitPrice());
         }
 
         OrderEntity saved = orderRepository.save(entity);
@@ -57,6 +64,75 @@ public class OrderService {
         orderEventPublisher.publishOrderPlaced(OrderPlacedEvent.from(saved));
 
         return OrderResponse.from(saved);
+    }
+
+    /**
+     * Reserve stock for every line, or none of them.
+     *
+     * <p>Two ordering details in here are load-bearing.
+     *
+     * <p><strong>The status is set before the allocations run.</strong> The stock updates are bulk
+     * JPQL with {@code clearAutomatically}, which detaches this entity — any pending change not yet
+     * flushed would be silently lost. Setting it first means {@code flushAutomatically} writes it
+     * on the way into the first allocation. If a later line is short, the exception rolls the whole
+     * transaction back, status included.
+     *
+     * <p><strong>SKUs are allocated in a deterministic order.</strong> Order A locking SKU-1 then
+     * SKU-2 while order B locks SKU-2 then SKU-1 is a textbook deadlock, and Postgres resolves it
+     * by killing one of them.
+     */
+    @Transactional
+    public OrderResponse acceptOrder(UUID orderId) {
+        OrderEntity order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        // PENDING is accepted alongside PAID only until the payments listener exists — once
+        // something moves orders to PAID on its own, tighten this to PAID and nothing else.
+        if (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.PAID) {
+            throw new InvalidStatusTransitionException(order.getStatus(), OrderStatus.ALLOCATED);
+        }
+
+        List<OrderItem> toAllocate = linesOf(order);
+
+        order.setStatus(OrderStatus.ALLOCATED);
+        toAllocate.forEach(line -> stockService.allocate(line.sku(), line.quantity()));
+
+        log.info("Order {} ALLOCATED ({} lines)", orderId, toAllocate.size());
+        return OrderResponse.from(reload(orderId));
+    }
+
+    /** The goods leave. Only legal from {@code ALLOCATED} — you cannot ship what was never reserved. */
+    @Transactional
+    public OrderResponse finalizeOrder(UUID orderId) {
+        OrderEntity order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (order.getStatus() != OrderStatus.ALLOCATED) {
+            throw new InvalidStatusTransitionException(order.getStatus(), OrderStatus.SHIPPED);
+        }
+
+        List<OrderItem> toConsume = linesOf(order);
+
+        order.setStatus(OrderStatus.SHIPPED);
+        toConsume.forEach(line -> stockService.consume(line.sku(), line.quantity()));
+
+        log.info("Order {} SHIPPED ({} lines)", orderId, toConsume.size());
+        return OrderResponse.from(reload(orderId));
+    }
+
+    /**
+     * Copies the lines out to plain values before any stock update runs, because those updates
+     * detach the entities these came from.
+     */
+    private List<OrderItem> linesOf(OrderEntity order) {
+        return order.getLines().stream()
+                .map(line -> new OrderItem(line.getSku(), line.getQuantity()))
+                .sorted(Comparator.comparing(OrderItem::sku))
+                .toList();
+    }
+
+    private OrderEntity reload(UUID orderId) {
+        return orderRepository.findById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 
     /**
@@ -121,6 +197,11 @@ public class OrderService {
         return orderRepository.findById(orderId).map(OrderResponse::from).orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 
+    /**
+     * Cancelling an {@code ALLOCATED} order has to give the stock back — otherwise every cancelled
+     * order permanently reduces what the warehouse can sell. Cancelling a merely {@code PENDING}
+     * one moves no quantities, because none were ever reserved.
+     */
     @Transactional
     public CancelledOrderResponse cancelOrder(UUID orderId, String customerId) {
         OrderEntity foundOrder = orderRepository.findById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
@@ -131,36 +212,20 @@ public class OrderService {
             throw new OrderAccessDeniedException(orderId, customerId);
         }
 
-        // Check if the order is already refunded or delivered
-        // Order is already cancelled
-        if (orderStatus == OrderStatus.CANCELLED) {
-            throw new InvalidStatusTransitionException(foundOrder.getStatus(), OrderStatus.CANCELLED);
+        // Terminal states cannot move again, and SHIPPED is past the point of no return: the goods
+        // have left, so returning them is a refund, not a cancellation.
+        if (orderStatus.isTerminal() || orderStatus == OrderStatus.SHIPPED) {
+            throw new InvalidStatusTransitionException(orderStatus, OrderStatus.CANCELLED);
         }
 
-        // Order is already delivered
-        if (orderStatus == OrderStatus.DELIVERED) {
-            throw new InvalidStatusTransitionException(foundOrder.getStatus(), OrderStatus.DELIVERED);
-        }
+        List<OrderItem> toRelease = orderStatus == OrderStatus.ALLOCATED ? linesOf(foundOrder) : List.of();
 
-        // Order is already refunded
-        if (orderStatus == OrderStatus.REFUNDED) {
-            throw new InvalidStatusTransitionException(foundOrder.getStatus(), OrderStatus.REFUNDED);
-        }
-
-        // Order is already cancelled
-        if (orderStatus == OrderStatus.SHIPPED) {
-            throw new InvalidStatusTransitionException(foundOrder.getStatus(), OrderStatus.SHIPPED);
-        }
-
-
-        if (orderStatus == OrderStatus.FAILED) {
-            throw new InvalidStatusTransitionException(foundOrder.getStatus(), OrderStatus.FAILED);
-        }
-
-        // Final step saving the order as cancelled
+        // Set the status first, for the same reason as acceptOrder — the release below detaches
+        // this entity. No save(): dirty checking flushes it.
         foundOrder.setStatus(OrderStatus.CANCELLED);
-        orderRepository.save(foundOrder);
+        toRelease.forEach(line -> stockService.release(line.sku(), line.quantity()));
 
-        return new CancelledOrderResponse(orderId, foundOrder.getStatus(), Instant.now());
+        log.info("Order {} CANCELLED from {} ({} lines released)", orderId, orderStatus, toRelease.size());
+        return new CancelledOrderResponse(orderId, OrderStatus.CANCELLED, Instant.now());
     }
 }
